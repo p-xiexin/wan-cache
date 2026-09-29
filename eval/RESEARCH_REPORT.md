@@ -77,6 +77,12 @@ experiment/
 
 这个入口先由 [summarize.py](summarize.py) 汇总 latency、每段视频的 DiT 累计时间、skip 和整体 speedup，再由 [evaluate_quality.py](evaluate_quality.py) 计算 PSNR、SSIM、LPIPS 和 FVD，最后在 `metrics/evaluation_summary.md` 生成统一表格。Cache 时间、调用数和单次前向均值继续写入性能 CSV。质量指标按相同 prompt 和 seed 的候选视频与 Origin 配对。当前配置包含 33 个质量配对。
 
+## 500 条轨迹的 DiT 输出变化
+
+![500 条轨迹的 DiT 输出相对变化](figures/dit_output_change_500_trajectories.png)
+
+500 条完整计算轨迹呈现稳定的 U 形变化。首段和末段的相邻 DiT 输出变化明显增大，中间 timestep 的中位数约为 `10^-2`。浅蓝线表示单条轨迹，阴影表示第 25 至第 75 百分位，深蓝线表示中位数。这一分布说明 timestep 本身提供了强先验，同时轨迹间离散程度仍要求缓存策略使用当前样本的动态信息。
+
 ## 当前实验结果
 
 | Method | Latency | Skip | Speedup | PSNR | SSIM | LPIPS |
