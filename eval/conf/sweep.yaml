@@ -1,0 +1,80 @@
+defaults:
+  - _self_
+
+paths:
+  project_root: ${oc.env:EASYCACHE_ROOT,.}
+  checkpoint_dir: ${oc.env:WAN_CKPT_DIR,/path/to/Wan2.2-TI2V-5B}
+  output_root: ${oc.env:EVAL_OUTPUT_ROOT,eval/outputs/experiment}
+  model_artifact: ${oc.env:MODEL_ARTIFACT,eval/artifacts/model/model.pth}
+  temporal_artifact: ${oc.env:TEMPORAL_ARTIFACT,eval/artifacts/temporal/model.pth}
+
+prompts:
+  file: eval/prompts.txt
+  seed: 123
+
+methods:
+  - name: origin
+    method:
+      _target_: eval.model.origin.OriginMethod
+
+  - name: easycache
+    cache_thresholds: [0.03, 0.05, 0.07]
+    method:
+      _target_: eval.model.easycache.EasyCacheMethod
+
+  - name: model
+    cache_thresholds: [0.03, 0.05, 0.07]
+    warmup_steps: 10
+    final_full_steps: 7
+    method:
+      _target_: eval.model.cumulative.CumulativeMethod
+      artifact_path: ${paths.model_artifact}
+
+  - name: temporal
+    cache_thresholds: [0.03, 0.05, 0.07]
+    method:
+      _target_: eval.model.temporal.TemporalMethod
+      artifact_path: ${paths.temporal_artifact}
+
+  - name: magcache_output
+    cache_thresholds: [0.06]
+    method:
+      _target_: eval.model.magcache.MagCacheMethod
+      max_cached_pairs: 2
+      retention_ratio: 0.2
+      # Conditional ratios from the official Wan2.2 TI2V-5B T2V profile.
+      magnitude_ratios: [1.0, 0.99505, 0.99441, 0.99558, 0.99499, 0.99534, 0.99468, 0.99463, 0.9946, 0.99408, 0.9945, 0.99409, 0.99403, 0.99382, 0.99349, 0.99377, 0.9933, 0.99303, 0.99217, 0.992, 0.99201, 0.99133, 0.99112, 0.99155, 0.98958, 0.98959, 0.98838, 0.98826, 0.9883, 0.98711, 0.98562, 0.98511, 0.98414, 0.98284, 0.98104, 0.97981, 0.97849, 0.97557, 0.97398, 0.97171, 0.96917, 0.96511, 0.96263, 0.95839, 0.95483, 0.94942, 0.9468, 0.94583, 0.94843, 0.96949]
+
+  - name: d2cache_output
+    cache_thresholds: [0.05]
+    method:
+      _target_: eval.model.d2cache.D2CacheMethod
+
+generation:
+  task: ti2v-5B
+  size: 1280*704
+  frame_num: 121
+  sample_steps: 50
+  sample_solver: unipc
+  sample_shift: 5.0
+  sample_guide_scale: 5.0
+  warmup_steps: 7
+  final_full_steps: 1
+  image: null
+  offload_model: true
+  convert_model_dtype: false
+  t5_cpu: false
+
+runtime:
+  device_id: 0
+  task_index: -1
+  dry_run: false
+
+parallel:
+  num_processes: auto
+
+hydra:
+  run:
+    dir: ${paths.output_root}/hydra/${oc.env:SLURM_JOB_ID,local}
+  job:
+    chdir: false

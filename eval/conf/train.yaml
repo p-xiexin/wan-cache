@@ -1,0 +1,75 @@
+defaults:
+  - _self_
+
+mode: offline
+project_root: ${oc.env:EASYCACHE_ROOT,.}
+
+# 累计模型输出
+output_dir: ${project_root}/eval/artifacts/model
+# Temporal 输出
+# output_dir: ${project_root}/eval/artifacts/temporal
+device: ${oc.env:TRAIN_DEVICE,cuda}
+seed: 0
+
+# 累计模型
+model:
+  _target_: eval.model.CacheModel
+  input_dim: 8
+  horizon: 4
+
+# Temporal 模型
+# model:
+#   _target_: eval.model.TemporalModel
+#   input_dim: 8
+#   history_length: 6
+#   hidden_dim: 32
+#   head_dim: 64
+#   horizon: 4
+
+loss:
+  _target_: eval.model.CacheLoss
+  threshold: ${cache.threshold}
+
+cache:
+  threshold: 0.05
+  calibration_coverage: 0.95
+  max_unsafe_rate: 0.01
+
+data:
+  _target_: eval.dataloader.TrajectoryDataModule
+  data_dir: ${oc.env:TRAIN_DATA_DIR,???}
+  pattern: "*_lazy_data.pt"
+  val_ratio: 0.2
+  batch_size: 256
+  num_workers: 0
+  min_valid_horizon: 1
+  full_horizon_only: false
+  expected_step_stride: 0
+  require_step_indices: false
+  max_target: null
+  normalize: true
+  history_length: ${oc.select:model.history_length,0}
+  seed: ${seed}
+
+train:
+  epochs: 300
+  patience: 40
+  grad_clip: 1.0
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 0.001
+  weight_decay: 0.0
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  mode: min
+  factor: 0.5
+  patience: 10
+  min_lr: 0.000001
+
+hydra:
+  run:
+    dir: ${output_dir}
+  job:
+    chdir: false

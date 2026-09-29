@@ -1,0 +1,7 @@
+hydra-core>=1.3
+omegaconf>=2.3
+Pillow>=10.0
+numpy>=1.26
+opencv-python-headless>=4.10
+torchmetrics>=1.7
+lpips>=0.1.4

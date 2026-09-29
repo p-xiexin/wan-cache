@@ -1,0 +1,84 @@
+project_root: ${oc.env:EASYCACHE_ROOT,../..}
+experiment_root: eval/outputs/experiment
+output_dir: ${experiment_root}/metrics/quality
+
+origins:
+  - ${experiment_root}/origin/0.mp4
+  - ${experiment_root}/origin/1.mp4
+  - ${experiment_root}/origin/2.mp4
+
+targets:
+  - method: easycache
+    cache_threshold: 0.03
+    videos:
+      - ${experiment_root}/easycache_0.03/0.mp4
+      - ${experiment_root}/easycache_0.03/1.mp4
+      - ${experiment_root}/easycache_0.03/2.mp4
+  - method: easycache
+    cache_threshold: 0.05
+    videos:
+      - ${experiment_root}/easycache_0.05/0.mp4
+      - ${experiment_root}/easycache_0.05/1.mp4
+      - ${experiment_root}/easycache_0.05/2.mp4
+  - method: easycache
+    cache_threshold: 0.07
+    videos:
+      - ${experiment_root}/easycache_0.07/0.mp4
+      - ${experiment_root}/easycache_0.07/1.mp4
+      - ${experiment_root}/easycache_0.07/2.mp4
+  - method: model
+    cache_threshold: 0.03
+    videos:
+      - ${experiment_root}/model_0.03/0.mp4
+      - ${experiment_root}/model_0.03/1.mp4
+      - ${experiment_root}/model_0.03/2.mp4
+  - method: model
+    cache_threshold: 0.05
+    videos:
+      - ${experiment_root}/model_0.05/0.mp4
+      - ${experiment_root}/model_0.05/1.mp4
+      - ${experiment_root}/model_0.05/2.mp4
+  - method: model
+    cache_threshold: 0.07
+    videos:
+      - ${experiment_root}/model_0.07/0.mp4
+      - ${experiment_root}/model_0.07/1.mp4
+      - ${experiment_root}/model_0.07/2.mp4
+  - method: temporal
+    cache_threshold: 0.03
+    videos:
+      - ${experiment_root}/temporal_0.03/0.mp4
+      - ${experiment_root}/temporal_0.03/1.mp4
+      - ${experiment_root}/temporal_0.03/2.mp4
+  - method: temporal
+    cache_threshold: 0.05
+    videos:
+      - ${experiment_root}/temporal_0.05/0.mp4
+      - ${experiment_root}/temporal_0.05/1.mp4
+      - ${experiment_root}/temporal_0.05/2.mp4
+  - method: temporal
+    cache_threshold: 0.07
+    videos:
+      - ${experiment_root}/temporal_0.07/0.mp4
+      - ${experiment_root}/temporal_0.07/1.mp4
+      - ${experiment_root}/temporal_0.07/2.mp4
+  - method: magcache_output
+    cache_threshold: 0.06
+    videos:
+      - ${experiment_root}/magcache_output_0.06/0.mp4
+      - ${experiment_root}/magcache_output_0.06/1.mp4
+      - ${experiment_root}/magcache_output_0.06/2.mp4
+  - method: d2cache_output
+    cache_threshold: 0.05
+    videos:
+      - ${experiment_root}/d2cache_output_0.05/0.mp4
+      - ${experiment_root}/d2cache_output_0.05/1.mp4
+      - ${experiment_root}/d2cache_output_0.05/2.mp4
+device: cuda:0
+batch_size: 4
+# Download: https://download.pytorch.org/models/alexnet-owt-7be5be79.pth
+alexnet_path: /path/to/alexnet-owt-7be5be79.pth
+# Download: https://www.dropbox.com/s/ge9e5ujwgetktms/i3d_torchscript.pt?dl=1
+i3d_path: /path/to/i3d_torchscript.pt
+fvd_num_frames: 16
+fvd_frame_stride: 8

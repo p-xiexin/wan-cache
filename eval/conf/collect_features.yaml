@@ -1,0 +1,35 @@
+defaults:
+  - _self_
+
+paths:
+  project_root: ${oc.env:EASYCACHE_ROOT,.}
+  checkpoint_dir: /path/to/Wan2.2-TI2V-5B
+  output_root: eval/data/cache_features
+
+prompts:
+  file: eval/prompts.txt
+
+generation:
+  task: ti2v-5B
+  size: 1280*704
+  frame_num: 121
+  sample_steps: 50
+  sample_solver: unipc
+  sample_shift: 5.0
+  sample_guide_scale: 5.0
+  image: null
+  offload_model: true
+  convert_model_dtype: false
+  t5_cpu: false
+
+runtime:
+  device_id: 0
+
+parallel:
+  num_processes: auto
+
+hydra:
+  run:
+    dir: ${paths.output_root}/hydra/${oc.env:SLURM_JOB_ID,local}
+  job:
+    chdir: false

@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environments
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+
+# Generated data and runs
+data/
+outputs/
+artifacts/
+hydra/
+multirun/
+wandb/
+lightning_logs/
+
+# Weights and tensor data
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.joblib
+*.npy
+*.npz
+
+# Videos and logs
+*.mp4
+*.avi
+*.mov
+*.log
+*.out
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
