@@ -1,0 +1,23 @@
+{
+  "prior_anchor": {
+    "prior_path": "prior.json",
+    "use_online_fit": false,
+    "use_mirror_node": false
+  },
+  "online_fit": {
+    "prior_path": "prior.json",
+    "use_online_fit": true,
+    "use_mirror_node": false
+  },
+  "online_mirror": {
+    "prior_path": "prior.json",
+    "use_online_fit": true,
+    "use_mirror_node": true
+  },
+  "geometry_control": {
+    "prior_path": "prior.json",
+    "use_online_fit": true,
+    "use_mirror_node": true,
+    "mirror_node_mode": "anchor"
+  }
+}

@@ -483,20 +483,21 @@ class EvalContractTests(unittest.TestCase):
                 [task],
             )
 
-    def test_default_grid_has_thirty_six_tasks(self) -> None:
+    def test_default_grid_has_thirty_nine_tasks(self) -> None:
         cfg = OmegaConf.load(PROJECT_ROOT / "eval" / "conf" / "sweep.yaml")
         tasks = build_tasks(cfg, PROJECT_ROOT)
-        self.assertEqual(len(tasks), 36)
+        self.assertEqual(len(tasks), 39)
         self.assertEqual(sum(task.method == "origin" for task in tasks), 3)
         self.assertEqual(sum(task.method == "easycache" for task in tasks), 9)
         self.assertEqual(sum(task.method == "model" for task in tasks), 9)
         self.assertEqual(sum(task.method == "temporal" for task in tasks), 9)
         self.assertEqual(sum(task.method == "magcache_output" for task in tasks), 3)
         self.assertEqual(sum(task.method == "d2cache_output" for task in tasks), 3)
-        self.assertEqual([task.run_id for task in tasks], [str(i) for i in range(36)])
+        self.assertEqual(sum(task.method == "piecewise" for task in tasks), 3)
+        self.assertEqual([task.run_id for task in tasks], [str(i) for i in range(39)])
         self.assertEqual(
             [task.prompt_id for task in tasks],
-            ["0"] * 12 + ["1"] * 12 + ["2"] * 12,
+            ["0"] * 13 + ["1"] * 13 + ["2"] * 13,
         )
         self.assertEqual({task.seed for task in tasks}, {123})
         model_tasks = [task for task in tasks if task.method == "model"]
@@ -533,6 +534,7 @@ class EvalContractTests(unittest.TestCase):
             "temporal_0.07",
             "magcache_output_0.06",
             "d2cache_output_0.05",
+            "piecewise",
         ]
         self.assertEqual(
             [task.output_group for task in tasks],
@@ -558,6 +560,7 @@ class EvalContractTests(unittest.TestCase):
                 "eval.model.temporal.TemporalMethod",
                 "eval.model.magcache.MagCacheMethod",
                 "eval.model.d2cache.D2CacheMethod",
+                "eval.model.piecewise.PiecewisePolynomialMethod",
             },
         )
         self.assertNotIn("origin_root", cfg.paths)
@@ -598,13 +601,13 @@ class EvalContractTests(unittest.TestCase):
             preview=True,
         )
         experiment_root = (PROJECT_ROOT / "eval" / "outputs" / "experiment").resolve()
-        self.assertEqual(len(pairs), 33)
+        self.assertEqual(len(pairs), 36)
         self.assertEqual(
             [pair.origin_video for pair in pairs],
             [
                 experiment_root / "origin" / f"{prompt_id}.mp4"
                 for prompt_id in range(3)
-                for _ in range(11)
+                for _ in range(12)
             ],
         )
         groups = (
@@ -619,6 +622,7 @@ class EvalContractTests(unittest.TestCase):
             "temporal_0.07",
             "magcache_output_0.06",
             "d2cache_output_0.05",
+            "piecewise",
         )
         self.assertEqual(
             [pair.target_video for pair in pairs],

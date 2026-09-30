@@ -1,0 +1,46 @@
+分段多项式方案：Wan 推理部署
+
+使用现有入口
+  方法已加入 conf/sweep.yaml 的 methods，与 EasyCache、D2Cache 等一起运行。
+  直接编辑 piecewise 条目，无需专用配置或额外启动脚本：
+
+    - name: piecewise
+      method:
+        _target_: eval.model.piecewise.PiecewisePolynomialMethod
+        artifact_path: ${paths.piecewise_artifact}
+        use_online_fit: true
+        use_mirror_node: false
+        tensor_degree: 1
+        skip_steps: 2
+        full_block_steps: 2
+
+  false/false：冻结先验；true/false：在线校正；true/true：在线校正加镜像节点。
+  use_online_fit=false 时不能开启 use_mirror_node。
+  自行保留需要的 methods；对比多组时复制条目并使用不同 name 区分输出。
+
+部署与运行
+  将 piecewise_wan_deployment.zip 中的 eval/ 合并到服务器 Wan2.2 项目根目录。
+  保留服务器已有修改，并使用现有 Wan 环境和 checkpoint。
+  paths.piecewise_artifact 默认指向 eval/artifacts/piecewise_polynomial/prior.json。
+  该文件已用全部 500 条曲线拟合，无需重新训练。
+
+  从 Wan2.2 项目根目录运行原入口：
+    python -m eval.pipeline paths.checkpoint_dir=/path/to/Wan2.2-TI2V-5B
+  只检查任务列表：
+    python -m eval.pipeline runtime.dry_run=true
+  评估沿用 conf/quality.yaml，按实际 prompts 和方法名称调整视频列表。
+
+推理规则
+  prior.json 保存相邻 conditional DiT 输出相对变化 q 的分段三次 log(q) 曲线。
+  在线用真实 q 校正曲线；镜像开关加入偏离先验的镜像软节点。
+  张量预测使用累计变化坐标 rho(t)=sum(q_hat(s))，在最近 d+1 个真实输出
+  节点上拟合 d 阶多项式。默认 tensor_degree=1，也支持 2。
+  两个 CFG 分支共享曲线坐标，各自保存真实输出；预测值不作为真实节点。
+  默认前 7 步和末 1 步真实计算，中间重复“预测 2 步、真实 2 步”。
+  共 28 个真实 CFG pair、22 个预测 pair；full_block_steps 至少为 2，
+  才能测得相邻真实输出的 q。该方法用固定节点调度，不配置 cache_threshold。
+
+适用范围
+  当前系数对应 TI2V-5B、1280*704、121 帧、50 步、UniPC、shift=5、CFG=5 的 T2V。
+  运行时校验生成参数和 timestep，日志保存开关、系数哈希、真实节点及预测权重。
+  本地已验证数值计算及模拟 Wan forward 接口；真实 GPU 视频质量仍需服务器实验。

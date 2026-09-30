@@ -97,7 +97,7 @@ class CacheMethod:
         if not self.skip_current_pair:
             return None
 
-        cached_residual = self.predict_cached_residual(
+        cached_output = self.predict_cached_output(
             raw_input,
             timestep,
             is_conditional,
@@ -106,10 +106,14 @@ class CacheMethod:
             self.prev_previous_raw_input_even = self.previous_raw_input_even
             self.previous_raw_input_even = raw_input
         self.forward_index += 1
-        return [
-            (input_tensor + residual).float()
-            for input_tensor, residual in zip(raw_input, cached_residual)
-        ]
+        return cached_output
+
+    def predict_cached_output(
+        self, raw_input: TensorList, timestep: Any, is_conditional: bool,
+    ) -> TensorList:
+        """Reconstruct an output; direct-output predictors may override this."""
+        residuals = self.predict_cached_residual(raw_input, timestep, is_conditional)
+        return [(x + residual).float() for x, residual in zip(raw_input, residuals)]
 
     def predict_cached_residual(
         self,

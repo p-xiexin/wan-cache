@@ -201,7 +201,7 @@ TRAIN_CONFIG=train sbatch eval/slurm/run_train.sbatch
 
 ## 视频生成
 
-[conf/sweep.yaml](conf/sweep.yaml) 默认使用三条 prompt，并展开 36 个任务。`prompts.seed` 是所有 prompt 和方法共同使用的单个随机种子，保证每个方法对同一 prompt 使用完全相同的采样初值。
+[conf/sweep.yaml](conf/sweep.yaml) 默认使用三条 prompt，并展开 39 个任务。`prompts.seed` 是所有 prompt 和方法共同使用的单个随机种子，保证每个方法对同一 prompt 使用完全相同的采样初值。
 
 ```text
 Origin       1 个配置 × 3 条 prompt = 3
@@ -210,9 +210,12 @@ Model        3 个阈值 × 3 条 prompt = 9
 Temporal     3 个阈值 × 3 条 prompt = 9
 MagCache output  1 个配置 × 3 条 prompt = 3
 D2Cache output   1 个配置 × 3 条 prompt = 3
+Piecewise       1 个配置 × 3 条 prompt = 3
 ```
 
 `magcache_output` 使用 MagCache 官方 Wan2.2 TI2V-5B T2V magnitude ratio、0.06 阈值和最大连续缓存 2 个 pair。`d2cache_output` 使用与 EasyCache 相同的 output-level 调度，并用前两次完整计算得到的 residual delta 修正缓存输出。两者都是完整 DiT output residual 上的快速研究适配。MagCache 和 D2Cache 原实现都作用在 transformer block feature 上，当前结果不能直接与论文数字等同。
+
+`piecewise` 使用已训练的分段多项式先验，通过真实输出节点预测后续 DiT 输出。直接修改该方法的 `use_online_fit` 和 `use_mirror_node` 即可对比，默认 `true/false`；`false/false` 关闭在线校正，`true/true` 加入镜像节点。系数路径为 `paths.piecewise_artifact`，方法说明见 [PIECEWISE_DEPLOYMENT.txt](PIECEWISE_DEPLOYMENT.txt)。
 
 Wan 必须安装在当前 conda 环境中。`paths.checkpoint_dir` 指向 Wan 权重目录，`paths.model_artifact` 和 `paths.temporal_artifact` 指向两套学习方法的权重。
 

@@ -8,6 +8,7 @@ paths:
   model_artifact: ${oc.env:MODEL_ARTIFACT,eval/artifacts/model/model.pth}
   temporal_artifact: ${oc.env:TEMPORAL_ARTIFACT,eval/artifacts/temporal/model.pth}
   predictor_artifact: ${oc.env:PREDICTOR_ARTIFACT,eval/artifacts/polynomial/model.pth}
+  piecewise_artifact: ${oc.env:PIECEWISE_PRIOR,eval/artifacts/piecewise_polynomial/prior.json}
 
 prompts:
   file: eval/prompts.txt
@@ -50,6 +51,16 @@ methods:
     cache_thresholds: [0.05]
     method:
       _target_: eval.model.d2cache.D2CacheMethod
+
+  - name: piecewise
+    method:
+      _target_: eval.model.piecewise.PiecewisePolynomialMethod
+      artifact_path: ${paths.piecewise_artifact}
+      use_online_fit: true
+      use_mirror_node: false
+      tensor_degree: 1
+      skip_steps: 2
+      full_block_steps: 2
 
 generation:
   task: ti2v-5B

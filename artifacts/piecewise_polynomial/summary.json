@@ -1,0 +1,103 @@
+{
+  "unique_test_trajectories": 500,
+  "queries_per_trajectory": 144,
+  "fold_sizes": {
+    "train": 300,
+    "validation": 100,
+    "test": 100
+  },
+  "offline_training": "linear least squares for continuous piecewise cubic coefficients",
+  "same_prior_and_online_parameters_for_all_ablations": true,
+  "oof_metrics": {
+    "prior_anchor": {
+      "male": 0.07538986000706956,
+      "mape_percent": 7.544944102735462,
+      "p95_ape_percent": 23.522329641925953,
+      "rmse": 0.0025700845937602075
+    },
+    "online_fit": {
+      "male": 0.07255387324908966,
+      "mape_percent": 7.271968225930118,
+      "p95_ape_percent": 23.450236431879468,
+      "rmse": 0.0024755845936083594
+    },
+    "online_mirror": {
+      "male": 0.07247811605323604,
+      "mape_percent": 7.262399829307488,
+      "p95_ape_percent": 23.376450746370164,
+      "rmse": 0.0024700152059290745
+    },
+    "geometry_control": {
+      "male": 0.07243290733243156,
+      "mape_percent": 7.2587006740469056,
+      "p95_ape_percent": 23.378581182345687,
+      "rmse": 0.0024734443548144274
+    }
+  },
+  "late_36_48_oof_metrics": {
+    "prior_anchor": {
+      "male": 0.05620001051612942,
+      "mape_percent": 5.593492032713466,
+      "p95_ape_percent": 17.468310827720234,
+      "rmse": 0.0026476120635400085
+    },
+    "online_fit": {
+      "male": 0.04358487983274024,
+      "mape_percent": 4.3344310011011435,
+      "p95_ape_percent": 13.904807499216714,
+      "rmse": 0.0022093402455965823
+    },
+    "online_mirror": {
+      "male": 0.04365397164594395,
+      "mape_percent": 4.3393578283989145,
+      "p95_ape_percent": 13.881639953811852,
+      "rmse": 0.002187517591215407
+    },
+    "geometry_control": {
+      "male": 0.043444522555157634,
+      "mape_percent": 4.320204156095782,
+      "p95_ape_percent": 13.848987356444292,
+      "rmse": 0.0022027992560420474
+    }
+  },
+  "final_refit_segments": 15,
+  "stored_polynomial_coefficients": 60,
+  "selected_offline": {
+    "break_steps": [
+      1.0,
+      3.0,
+      5.0,
+      8.0,
+      12.0,
+      16.0,
+      20.0,
+      24.0,
+      26.0,
+      28.0,
+      32.0,
+      36.0,
+      40.0,
+      44.0,
+      46.0,
+      48.0
+    ],
+    "roughness": 0.0
+  },
+  "selected_online": {
+    "degree": 1,
+    "window": 5,
+    "ridge_before_axis": 10.0,
+    "ridge_after_axis": 0.1,
+    "mirror_weight": 0.001,
+    "coordinate_scale": 8.0
+  },
+  "mirror_axis_step": 26.7,
+  "limitations": [
+    "This is a scalar shape prior, not a learned output-tensor predictor.",
+    "OOF evaluation observes a dense true prefix; server sparse-node and closed-loop behavior are untested.",
+    "Data were previously explored; this is internal validation, not an untouched external test set.",
+    "No video quality, tensor direction, wall-clock speedup or new sample generation is claimed.",
+    "Prior is calibrated to the saved 50-step generation configuration; no silent cross-schedule extrapolation.",
+    "Mirror node values are soft hypotheses and never enter the true observation history."
+  ]
+}

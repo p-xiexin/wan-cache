@@ -297,6 +297,8 @@ def _generate_video(
         warmup_steps=task.warmup_steps,
         final_full_steps=task.final_full_steps,
     )
+    if hasattr(method, "validate_generation"):
+        method.validate_generation(generation)
     if getattr(method, "requires_sigma_schedule", False):
         from eval.predictor_schedule import make_wan_scheduler
 

@@ -1,0 +1,25 @@
+{
+  "tests_passed": 66,
+  "deployment_tests": 8,
+  "pipeline_contract_tests": 36,
+  "scalar_analysis_tests": 22,
+  "pipeline_dry_run": "39 tasks prepared via default sweep",
+  "real_wan_gpu_generation_tested": false,
+  "local_environment": "CPU; CUDA and Wan unavailable",
+  "source_sha256": {
+    "model/base.py": "99b153d964c8e3c13f468e53ca8602736b1cb8e1031861fc6efc615dc103f586",
+    "model/piecewise.py": "c969521c4e5ea0073563048121b5f46e3209748ec388d68adfbe59d3d3ce4329",
+    "model/__init__.py": "e18127d8c3af7db809f827b2c75759b9abc43c37fe259670a24928b71888d3ae",
+    "polynomial_prior.py": "7751cb5166e8ac07acc30f616f7127527dcc2f6cc4ac4824f4ae7145e57bf279",
+    "pipeline.py": "2406db0ad53334284d1f715ec837b8bd4bca91e3b4cb5807f247c83a8c57761b",
+    "conf/sweep.yaml": "982146b4025386932ccb6229a50cc81f1570b867d6b33790c677effd40ed6cf1",
+    "conf/quality.yaml": "ab9426472605f11647ead16b1cc7a0f116b1c376aa1b461f7d2487d1ca0d4ba8",
+    "tests/test_contracts.py": "ba6eb621e52b357abe6b1e1d3db803a2f8af35ad9497ddbd036aaae5a8f72a50",
+    "tests/test_piecewise_deployment.py": "8a95e95336709fe3e06bdc1c3e6b1422d06db78001088a517db67b39064c7b1e",
+    "artifacts/piecewise_polynomial/prior.json": "53a385cefd19300ec523334f98715a982659694b6ef6821801b478d7bc88693a",
+    "PIECEWISE_DEPLOYMENT.txt": "5388368e974eac6205d55d22565fd6d0ca376ecb6544805a7d3a09ece36bc1a5"
+  },
+  "integration_entry": "python -m eval.pipeline (conf/sweep.yaml)",
+  "tests_rerun_after_sweep_integration": 44,
+  "scalar_analysis_tests_note": "22 previously passed; scalar fitting implementation unchanged"
+}

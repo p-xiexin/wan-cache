@@ -8,6 +8,7 @@ from eval.model.magcache import MagCacheMethod
 from eval.model.origin import OriginMethod
 from eval.model.temporal import TemporalLoss, TemporalMethod, TemporalModel
 from eval.model.polynomial import PolynomialLoss, PolynomialMethod, PolynomialPredictor
+from eval.model.piecewise import PiecewisePolynomialMethod
 
 __all__ = [
     "CacheLoss",
@@ -18,6 +19,7 @@ __all__ = [
     "EasyCacheMethod",
     "MagCacheMethod",
     "OriginMethod",
+    "PiecewisePolynomialMethod",
     "PolynomialLoss",
     "PolynomialMethod",
     "PolynomialPredictor",
