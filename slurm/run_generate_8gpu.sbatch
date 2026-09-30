@@ -5,13 +5,14 @@
 #SBATCH --gpus=8
 #SBATCH --cpus-per-task=8
 
-cd /path/to/EasyCache
-source /path/to/miniconda3/etc/profile.d/conda.sh
-conda activate easycache
+set -euo pipefail
 
-python -m eval.pipeline \
+cd "${EASYCACHE_ROOT:-/path/to/EasyCache}"
+source "${CONDA_SH:-/path/to/miniconda3/etc/profile.d/conda.sh}"
+conda activate "${WAN_CONDA_ENV:-easycache}"
+
+python -m eval.pipeline --config-name="${GENERATE_CONFIG:-sweep_predictor}" \
   parallel.num_processes=auto \
-  paths.checkpoint_dir=/path/to/Wan2.2-TI2V-5B \
-  paths.model_artifact=/path/to/EasyCache/eval/artifacts/model/model.pth \
-  paths.temporal_artifact=/path/to/EasyCache/eval/artifacts/temporal/model.pth \
-  paths.output_root=/path/to/EasyCache/eval/outputs/experiment
+  paths.checkpoint_dir="${WAN_CKPT_DIR:-/path/to/Wan2.2-TI2V-5B}" \
+  paths.predictor_artifact="${PREDICTOR_ARTIFACT:-eval/artifacts/polynomial/model.pth}" \
+  "$@"

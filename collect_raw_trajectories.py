@@ -15,6 +15,7 @@ from PIL import Image
 
 from eval.cache_hook import patch_forward
 from eval.pipeline import WanWorkerRuntime, _resolve, _resolve_num_processes
+from eval.predictor_schedule import make_wan_scheduler
 
 
 class RawRecorder:
@@ -36,7 +37,7 @@ class RawRecorder:
             {
                 "step_index": step_index,
                 "branch": branch,
-                "timestep": float(timestep.detach().reshape(-1)[0].cpu()),
+                "timestep": float(timestep.detach().max().cpu()),
                 "model_input": model_input,
                 "model_output": self.copy(model_output),
             }
@@ -75,6 +76,9 @@ def collect_trajectory(
     output_dir.mkdir(parents=True)
 
     runtime.ensure_loaded()
+    scheduler = make_wan_scheduler(
+        cfg.generation, runtime.pipeline.device, runtime.pipeline.num_train_timesteps,
+    )
     recorder = RawRecorder(output_dir, int(cfg.storage.shard_steps))
     original_forward = runtime.pipeline.model.forward
 
@@ -112,7 +116,14 @@ def collect_trajectory(
     del video
 
     recorder.finish(int(cfg.generation.sample_steps))
-    metadata = {**record, "shards": recorder.shards}
+    metadata = {
+        **record, "shards": recorder.shards,
+        "scheduler": {
+            "sigmas": scheduler.sigmas.cpu().tolist(),
+            "timesteps": scheduler.timesteps.cpu().tolist(),
+            "num_train_timesteps": runtime.pipeline.num_train_timesteps,
+        },
+    }
     (output_dir / "metadata.json").write_text(
         json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",

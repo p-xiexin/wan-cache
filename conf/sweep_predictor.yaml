@@ -1,0 +1,28 @@
+defaults:
+  - sweep
+  - _self_
+
+paths:
+  output_root: ${oc.env:EVAL_OUTPUT_ROOT,eval/outputs/polynomial}
+
+# Compare reconstructions under the same warmup, final steps and thresholds.
+methods:
+  - name: origin
+    method:
+      _target_: eval.model.OriginMethod
+
+  - name: easycache
+    cache_thresholds: [0.03, 0.05, 0.07]
+    method:
+      _target_: eval.model.EasyCacheMethod
+
+  - name: d2cache_output
+    cache_thresholds: [0.03, 0.05, 0.07]
+    method:
+      _target_: eval.model.D2CacheMethod
+
+  - name: polynomial
+    cache_thresholds: [0.03, 0.05, 0.07]
+    method:
+      _target_: eval.model.PolynomialMethod
+      artifact_path: ${paths.predictor_artifact}

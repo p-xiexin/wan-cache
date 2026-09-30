@@ -1,0 +1,60 @@
+defaults:
+  - _self_
+
+mode: predictor
+project_root: ${oc.env:EASYCACHE_ROOT,.}
+output_dir: ${project_root}/eval/artifacts/polynomial
+device: ${oc.env:TRAIN_DEVICE,cuda}
+seed: 0
+init_artifact: null
+
+paths:
+  checkpoint_dir: ${oc.env:WAN_CKPT_DIR,/path/to/Wan2.2-TI2V-5B}
+
+model:
+  _target_: eval.model.PolynomialPredictor
+  channels: 48
+  hidden_dim: 32
+  a_max: 2.0
+
+loss:
+  _target_: eval.model.PolynomialLoss
+  epsilon: 0.001
+  regularization: 0.001
+
+cache:
+  threshold: 0.05
+  warmup_steps: 7
+  final_full_steps: 1
+
+data:
+  data_dir: ${oc.env:TRAIN_DATA_DIR,???}
+  val_ratio: 0.2
+  batch_size: 1
+  num_workers: 0
+  # Used only when legacy raw metadata lacks the saved solver grid.
+  num_train_timesteps: 1000
+
+train:
+  # offline: direct raw sampling; rollout: short closed-loop fine-tuning;
+  # validate: full held-out trajectories, drift and paired video metrics.
+  stage: offline
+  epochs: 30
+  patience: 5
+  grad_clip: 1.0
+  rollout_steps: 4
+
+validation:
+  alexnet_path: ${oc.env:ALEXNET_PATH,/path/to/alexnet-owt-7be5be79.pth}
+  i3d_path: ${oc.env:I3D_PATH,/path/to/i3d_torchscript.pt}
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 0.0001
+  weight_decay: 0.0
+
+hydra:
+  run:
+    dir: ${output_dir}
+  job:
+    chdir: false

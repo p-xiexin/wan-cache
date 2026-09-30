@@ -85,7 +85,63 @@ sbatch eval/slurm/run_collect_raw_trajectories.sbatch
 
 同一个输出目录应保持 prompt 文件、seed 和生成参数不变。每条轨迹完成后日志会报告实际 GiB，正式扩量前应先采集一条轨迹并据此核算总容量。
 
-## 模型训练
+## 学习式残差预测器
+
+[PLAN.md](PLAN.md) 的三系数预测器已接入训练与生成入口。配置见 [train_predictor.yaml](conf/train_predictor.yaml) 和 [sweep_predictor.yaml](conf/sweep_predictor.yaml)。
+
+离线训练先按 prompt 划分训练/验证集，同一 prompt 的所有 seed 放在同一侧。每条 raw 轨迹遍历 t=3,…,T−1，为每个 t 直接采样 k<j<i<t，保留完整 latent 时空范围，不执行跳过判断；训练历史组合随 epoch 更新，验证组合固定。需要至少两个不同 prompt 的已完成轨迹和 dataset.yaml。默认使用 Wan2.2-TI2V-5B 的 48 个 latent 通道，其他模型需修改 model.channels。
+
+~~~bash
+python -m eval.train --config-name=train_predictor \
+  data.data_dir=/path/to/raw_wan_trajectories
+~~~
+
+输出到 eval/artifacts/polynomial，包含 model.pth、history.csv 和 summary.json；保存 prompt 划分，并记录预测器、残差复用与标准二次外推的节点 MAE，作为预训练诊断。
+
+短段闭环微调从 raw 初始 latent 开始，重新构建文本条件，使用冻结 Wan 和真实 scheduler 推进。跳过节点的教师输出只作标签。每段最多 4 步，仅截断梯度，不增加完整刷新。验证跑完整轨迹，记录逐步及最终 latent 漂移，按全轨迹平均漂移选择权重。当前闭环流程支持 CUDA 上的 T2V：
+
+~~~bash
+python -m eval.train --config-name=train_predictor \
+  data.data_dir=/path/to/raw_wan_trajectories \
+  train.stage=rollout \
+  init_artifact=eval/artifacts/polynomial/model.pth \
+  output_dir=eval/artifacts/polynomial_rollout \
+  paths.checkpoint_dir=/path/to/Wan2.2-TI2V-5B
+~~~
+
+完整验证沿用训练时的 data、seed 和 val_ratio，在保留的 prompt 上生成 Origin/预测器配对视频，计算 PSNR、SSIM、LPIPS、FVD；validation.json 保存每条轨迹的漂移曲线与最终误差。两个质量模型需使用本地权重：
+
+~~~bash
+python -m eval.train --config-name=train_predictor \
+  data.data_dir=/path/to/raw_wan_trajectories train.stage=validate \
+  init_artifact=eval/artifacts/polynomial_rollout/model.pth \
+  output_dir=eval/outputs/polynomial_validation \
+  paths.checkpoint_dir=/path/to/Wan2.2-TI2V-5B \
+  validation.alexnet_path=/path/to/alexnet-owt-7be5be79.pth \
+  validation.i3d_path=/path/to/i3d_torchscript.pt
+~~~
+
+参考末态由 raw 中的完整 DiT 输出经独立 scheduler 重建；学生轨迹保留自己的 solver 状态。质量评测失败时保留视频、漂移记录与 quality.yaml，可通过 evaluate_quality 重新评测。
+
+生成配置在相同保护区间和阈值下比较 Origin、EasyCache、D2Cache output 与预测器：
+
+~~~bash
+python -m eval.pipeline --config-name=sweep_predictor \
+  paths.checkpoint_dir=/path/to/Wan2.2-TI2V-5B \
+  paths.predictor_artifact=eval/artifacts/polynomial/model.pth
+
+python -m eval.evaluate --config eval/conf/quality_predictor.yaml \
+  alexnet_path=/path/to/alexnet-owt-7be5be79.pth \
+  i3d_path=/path/to/i3d_torchscript.pt
+~~~
+
+[run_train.sbatch](slurm/run_train.sbatch)、[run_generate_8gpu.sbatch](slurm/run_generate_8gpu.sbatch) 和 [run_evaluate.sbatch](slurm/run_evaluate.sbatch) 默认使用预测器配置，并透传命令行参数。提交前设置 EASYCACHE_ROOT、CONDA_SH、WAN_CONDA_ENV、TRAIN_DATA_DIR、WAN_CKPT_DIR；PREDICTOR_ARTIFACT 选择权重，ALEXNET_PATH/I3D_PATH 指定质量模型。生成与评测共用 EVAL_OUTPUT_ROOT。旧流程用 TRAIN_CONFIG=train、GENERATE_CONFIG=sweep、QUALITY_CONFIG=eval/conf/quality.yaml 选择。
+
+新 raw 采集会保存 solver sigma 网格。旧数据按 dataset.yaml 的 solver、步数与 shift 重建，并逐节点核对 timestep；不会把取整后的 timestep 直接除以 1000。分组和逐通道方案仍保留在草稿中。
+
+小张量流程测试可运行 python -m unittest discover -s eval/tests -p test_polynomial.py；覆盖 prompt 隔离、直接时序采样、不等间距外推、刷新判据、权重往返、闭环反传、完整漂移及视频评测接入。
+
+## 原有风险模型训练
 
 累计 MLP 和 Temporal 共用已有的 `*_lazy_data.pt`，无需为 Temporal 重新运行 Wan 采集。两种模型共用 [conf/train.yaml](conf/train.yaml)，通过注释切换下面两个 `model` 块，并同步切换文件顶部的输出目录。
 
@@ -118,10 +174,10 @@ python -m eval.train \
 对应的 Slurm 入口如下。
 
 ```bash
-sbatch eval/slurm/run_train.sbatch
+TRAIN_CONFIG=train sbatch eval/slurm/run_train.sbatch
 ```
 
-脚本使用硬编码路径，提交前直接修改项目目录、conda 环境和数据目录。输出目录在 `train.yaml` 顶部与模型一起切换。
+脚本通过上述环境变量配置路径。旧模型输出目录在 `train.yaml` 顶部与模型一起切换。
 
 ## 视频生成
 
@@ -142,7 +198,7 @@ Wan 必须安装在当前 conda 环境中。`paths.checkpoint_dir` 指向 Wan �
 
 ```bash
 python -m eval.pipeline runtime.dry_run=true
-sbatch eval/slurm/run_generate_8gpu.sbatch
+GENERATE_CONFIG=sweep sbatch eval/slurm/run_generate_8gpu.sbatch
 ```
 
 生成脚本只启动一个 Python 主进程。`parallel.num_processes=auto` 根据可见 GPU 数量创建 worker。每个 worker 只加载一次 Wan，并连续处理分配到该 GPU 的视频。每个视频重新实例化缓存方法，避免状态跨视频残留。
@@ -226,7 +282,7 @@ quality_summary.csv
 
 PSNR、SSIM 和 LPIPS 按配对视频逐帧计算后取均值。FVD 按方法和阈值形成视频分布，使用 16 帧 I3D 特征和 8 帧采样步长，覆盖当前 121 帧视频的第 0 到 120 帧。FVD 只写入 `quality_summary.csv` 和 `evaluation_summary.md`，值越低越好。默认实验每组只有 3 段视频，协方差估计的统计方差很高，正式报告应扩大 prompt 和 seed 数量。
 
-`run_generate_8gpu.sbatch` 中的实验目录必须与 `quality.yaml` 中的 `experiment_root` 一致。
+生成目录必须与所选质量配置的 `experiment_root` 一致：预测器流程使用 `quality_predictor.yaml`，原有流程使用 `quality.yaml`。
 
 ## 验证边界
 

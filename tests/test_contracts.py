@@ -1219,7 +1219,7 @@ class EvalContractTests(unittest.TestCase):
         method = EasyCacheMethod(cache_threshold=0.05)
         method.reset(sample_steps=2, warmup_steps=0, final_full_steps=0)
         run_with_cache_method(ScalingModel(), method, pairs=2)
-        self.assertEqual(method.transformation_rate, 2.0)
+        self.assertAlmostEqual(method.transformation_rate, 2.0)
 
     def test_magcache_uses_ratio_error_and_max_cached_pairs(self) -> None:
         method = MagCacheMethod(

@@ -68,6 +68,5 @@ class EasyCacheMethod(CacheMethod):
                 raw_input,
                 self.last_full_input_even,
             )
-            if input_change > self.epsilon:
-                self.transformation_rate = output_change / input_change
+            self.transformation_rate = output_change / (input_change + self.epsilon)
         self.last_full_input_even = raw_input

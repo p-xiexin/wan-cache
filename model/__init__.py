@@ -7,6 +7,7 @@ from eval.model.easycache import EasyCacheMethod
 from eval.model.magcache import MagCacheMethod
 from eval.model.origin import OriginMethod
 from eval.model.temporal import TemporalLoss, TemporalMethod, TemporalModel
+from eval.model.polynomial import PolynomialLoss, PolynomialMethod, PolynomialPredictor
 
 __all__ = [
     "CacheLoss",
@@ -17,6 +18,9 @@ __all__ = [
     "EasyCacheMethod",
     "MagCacheMethod",
     "OriginMethod",
+    "PolynomialLoss",
+    "PolynomialMethod",
+    "PolynomialPredictor",
     "TemporalLoss",
     "TemporalMethod",
     "TemporalModel",

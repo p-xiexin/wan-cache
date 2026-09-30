@@ -5,9 +5,12 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-task=8
 
-cd /path/to/EasyCache
-source /path/to/miniconda3/etc/profile.d/conda.sh
-conda activate easycache
+set -euo pipefail
 
-python -m eval.train \
-  data.data_dir=/path/to/trajectories
+cd "${EASYCACHE_ROOT:-/path/to/EasyCache}"
+source "${CONDA_SH:-/path/to/miniconda3/etc/profile.d/conda.sh}"
+conda activate "${WAN_CONDA_ENV:-easycache}"
+
+python -m eval.train --config-name="${TRAIN_CONFIG:-train_predictor}" \
+  data.data_dir="${TRAIN_DATA_DIR:-/path/to/raw_wan_trajectories}" \
+  "$@"

@@ -5,11 +5,12 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-task=8
 
-set -e
+set -euo pipefail
 
-cd /path/to/EasyCache
-source /path/to/miniconda3/etc/profile.d/conda.sh
-conda activate easycache
+cd "${EASYCACHE_ROOT:-/path/to/EasyCache}"
+source "${CONDA_SH:-/path/to/miniconda3/etc/profile.d/conda.sh}"
+conda activate "${WAN_CONDA_ENV:-easycache}"
 
 python -m eval.evaluate \
-  --config eval/conf/quality.yaml
+  --config "${QUALITY_CONFIG:-eval/conf/quality_predictor.yaml}" \
+  "$@"

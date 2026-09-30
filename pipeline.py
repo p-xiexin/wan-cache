@@ -297,6 +297,14 @@ def _generate_video(
         warmup_steps=task.warmup_steps,
         final_full_steps=task.final_full_steps,
     )
+    if getattr(method, "requires_sigma_schedule", False):
+        from eval.predictor_schedule import make_wan_scheduler
+
+        scheduler = make_wan_scheduler(
+            generation, f"cuda:{device_id}", runtime.pipeline.num_train_timesteps,
+        )
+        method.set_schedule(scheduler.sigmas, scheduler.timesteps)
+        del scheduler
     image = None
     if generation.image is not None:
         image = Image.open(

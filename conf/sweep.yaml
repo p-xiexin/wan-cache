@@ -7,6 +7,7 @@ paths:
   output_root: ${oc.env:EVAL_OUTPUT_ROOT,eval/outputs/experiment}
   model_artifact: ${oc.env:MODEL_ARTIFACT,eval/artifacts/model/model.pth}
   temporal_artifact: ${oc.env:TEMPORAL_ARTIFACT,eval/artifacts/temporal/model.pth}
+  predictor_artifact: ${oc.env:PREDICTOR_ARTIFACT,eval/artifacts/polynomial/model.pth}
 
 prompts:
   file: eval/prompts.txt

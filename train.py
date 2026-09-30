@@ -382,6 +382,11 @@ def main(cfg: DictConfig) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+    if cfg.mode == "predictor":
+        from eval.predictor_training import fit_predictor
+
+        fit_predictor(cfg, output_dir.resolve())
+        return
     model = instantiate(cfg.model)
     criterion = instantiate(cfg.loss)
     data_module = instantiate(cfg.data)

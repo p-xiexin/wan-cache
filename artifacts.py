@@ -14,6 +14,20 @@ from torch import nn
 SCHEMA_VERSION = 1
 
 
+def build_predictor_artifact(
+    model: nn.Module, model_config: Mapping[str, Any], cache_threshold: float,
+) -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "kind": "residual_polynomial",
+        "model_config": dict(model_config),
+        "model_state_dict": {
+            name: value.detach().cpu().clone() for name, value in model.state_dict().items()
+        },
+        "cache_threshold": float(cache_threshold),
+    }
+
+
 def build_artifact(
     model: nn.Module,
     model_config: Mapping[str, Any],
