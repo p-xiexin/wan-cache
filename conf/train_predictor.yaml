@@ -8,6 +8,10 @@ device: ${oc.env:TRAIN_DEVICE,cuda}
 seed: 0
 init_artifact: null
 
+parallel:
+  # Offline pretraining: one DDP process per visible GPU. Set 1 to disable.
+  num_processes: auto
+
 paths:
   checkpoint_dir: ${oc.env:WAN_CKPT_DIR,/path/to/Wan2.2-TI2V-5B}
 
@@ -30,8 +34,11 @@ cache:
 data:
   data_dir: ${oc.env:TRAIN_DATA_DIR,???}
   val_ratio: 0.2
-  batch_size: 1
-  num_workers: 0
+  # Per GPU. Auto probes full-volume forward/backward and optimizer memory.
+  batch_size: auto
+  auto_batch_max: 32
+  auto_batch_memory_fraction: 0.8
+  num_workers: auto
   # Used only when legacy raw metadata lacks the saved solver grid.
   num_train_timesteps: 1000
 
@@ -43,6 +50,7 @@ train:
   patience: 5
   grad_clip: 1.0
   rollout_steps: 4
+  log_every: 10
 
 validation:
   alexnet_path: ${oc.env:ALEXNET_PATH,/path/to/alexnet-owt-7be5be79.pth}

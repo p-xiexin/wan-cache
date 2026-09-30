@@ -96,6 +96,18 @@ python -m eval.train --config-name=train_predictor \
   data.data_dir=/path/to/raw_wan_trajectories
 ~~~
 
+离线预训练默认使用所有可见 GPU，每卡一个 DDP 进程；用 CUDA_VISIBLE_DEVICES 选择显卡，或 parallel.num_processes=1 切回单卡。data.batch_size=auto 按完整 latent 尺寸实测前向、反向和优化器显存，使用 80% 可用显存预算，各卡统一采用最小可用 batch。日志给出每卡 batch 和全局 batch，也可直接指定 data.batch_size=2 等固定值。
+
+首个 batch、每 10 个 batch 和阶段末尾会输出 loss、吞吐、读取/计算耗时、显存峰值与 ETA；耗时操作每 30 秒报告当前阶段。data.num_workers=auto 按分配的 CPU 数设置每卡最多两个读取进程，预取深度为 1；共享内存不足时可设 data.num_workers=0。训练尾部最多补齐 GPU 数减一个样本，保证各卡步数一致；验证样本不补齐、不重复，只有主进程保存权重和训练记录。
+
+训练 Slurm 脚本默认申请 8 张 GPU，可在提交时改为 4 张；普通 Python 入口会自动启动 DDP，无需额外套一层 torchrun：
+
+~~~bash
+sbatch --gpus-per-node=4 --cpus-per-task=16 eval/slurm/run_train.sbatch
+~~~
+
+多卡和自动 batch 当前用于 offline 阶段；rollout、validate 仍按单卡轨迹执行，这两阶段提交 Slurm 时使用 --gpus-per-node=1。
+
 输出到 eval/artifacts/polynomial，包含 model.pth、history.csv 和 summary.json；保存 prompt 划分，并记录预测器、残差复用与标准二次外推的节点 MAE，作为预训练诊断。
 
 短段闭环微调从 raw 初始 latent 开始，重新构建文本条件，使用冻结 Wan 和真实 scheduler 推进。跳过节点的教师输出只作标签。每段最多 4 步，仅截断梯度，不增加完整刷新。验证跑完整轨迹，记录逐步及最终 latent 漂移，按全轨迹平均漂移选择权重。当前闭环流程支持 CUDA 上的 T2V：

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import random
 from pathlib import Path
 
 import torch
 from omegaconf import OmegaConf
-from torch.utils.data import IterableDataset, get_worker_info
+from torch.utils.data import Dataset
 
 from eval.model.polynomial import ResidualHistory
 from eval.predictor_schedule import reconstruct_wan_schedule, validate_schedule
@@ -95,7 +96,7 @@ def iter_raw_pairs(path: Path):
         raise ValueError(f"incomplete CFG pair: {path}")
 
 
-class RawPredictorDataset(IterableDataset):
+class RawPredictorDataset(Dataset):
     """Sample k < j < i < t directly; keep both CFG branches and full volumes."""
 
     def __init__(
@@ -107,20 +108,52 @@ class RawPredictorDataset(IterableDataset):
         self.channels = int(channels)
         self.seed, self.shuffle, self.epoch = int(seed), shuffle, 0
         self.num_train_timesteps = int(num_train_timesteps)
+        self._cached = None
         if int(generation.sample_steps) < 4:
             raise ValueError("temporal pretraining requires at least four raw nodes")
 
+    def __len__(self):
+        return len(self.paths) * 2 * (int(self.generation.sample_steps) - 3)
+
     def __iter__(self):
+        self._cached = None
+        for index in range(len(self)):
+            yield self[index]
+
+    def __getitem__(self, index):
+        if not 0 <= index < len(self):
+            raise IndexError(index)
         paths = list(self.paths)
         if self.shuffle:
             random.Random(self.seed + self.epoch).shuffle(paths)
-        worker = get_worker_info()
-        if worker is not None:
-            paths = paths[worker.id::worker.num_workers]
-        for path in paths:
-            yield from self.samples(path)
+        per_trajectory = 2 * (int(self.generation.sample_steps) - 3)
+        path = paths[index // per_trajectory]
+        pair_index, branch = divmod(index % per_trajectory, 2)
+        sigmas, pairs, queries = self._prepare(path)
+        step, (k, j, i) = queries[pair_index]
+        record = pairs[step][branch]
+        history = ResidualHistory()
+        for anchor in (k, j, i):
+            node = pairs[anchor][branch]
+            history.push(
+                anchor, float(sigmas[anchor]),
+                node["model_input"][0][None].float(), node["model_output"][0][None].float(),
+            )
+        bases, q = history.features(step, float(sigmas[step]))
+        return {
+            "x": record["model_input"][0].float(), "bases": bases[0],
+            "q": q[0], "target": record["model_output"][0].float(),
+            "step": step, "anchor": i, "history_steps": (i, j, k), "branch": branch,
+        }
 
-    def samples(self, path: Path):
+    def _prepare(self, path: Path):
+        cache_key = (path, self.epoch if self.shuffle else 0)
+        if self._cached is not None and self._cached[0] == cache_key:
+            return self._cached[1:]
+        # Keep one mmap trajectory per loader worker; contiguous rank partitions
+        # retain disk locality without duplicating whole trajectories across GPUs.
+        self._cached = None
+        logging.getLogger(__name__).info("Indexing raw trajectory %s", path.name)
         sigmas, timesteps = read_schedule(path, self.generation, self.num_train_timesteps)
         # These are memory-mapped views, not copies of all trajectory tensors.
         pairs = list(iter_raw_pairs(path))
@@ -136,21 +169,10 @@ class RawPredictorDataset(IterableDataset):
         targets = list(range(3, len(timesteps)))
         if self.shuffle:
             rng.shuffle(targets)
-        for step in targets:
-            k, j, i = sorted(rng.sample(range(step), 3))
-            for branch, record in enumerate(pairs[step]):
-                history = ResidualHistory()
-                for anchor in (k, j, i):
-                    node = pairs[anchor][branch]
-                    history.push(
-                        anchor, float(sigmas[anchor]),
-                        node["model_input"][0][None].float(),
-                        node["model_output"][0][None].float(),
-                    )
-                bases, q = history.features(step, float(sigmas[step]))
-                yield {
-                    "x": record["model_input"][0].float(), "bases": bases[0],
-                    "q": q[0], "target": record["model_output"][0].float(),
-                    "step": step, "anchor": i, "history_steps": (i, j, k),
-                    "branch": branch,
-                }
+        queries = [(step, tuple(sorted(rng.sample(range(step), 3)))) for step in targets]
+        self._cached = (cache_key, sigmas, pairs, queries)
+        return self._cached[1:]
+
+    def __getstate__(self):
+        # Spawn loader workers without serializing mmap tensors from the parent.
+        return {**self.__dict__, "_cached": None}
