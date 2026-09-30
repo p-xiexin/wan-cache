@@ -9,7 +9,7 @@ seed: 0
 init_artifact: null
 
 parallel:
-  # Offline pretraining: one DDP process per visible GPU. Set 1 to disable.
+  # Offline and rollout: one training process per visible GPU. Set 1 to disable.
   num_processes: auto
 
 paths:
@@ -34,7 +34,8 @@ cache:
 data:
   data_dir: ${oc.env:TRAIN_DATA_DIR,???}
   val_ratio: 0.2
-  # Per GPU. Auto probes full-volume forward/backward and optimizer memory.
+  # Offline samples per GPU. Rollout keeps one independent trajectory per GPU.
+  # Auto probes full-volume forward/backward and optimizer memory for offline.
   batch_size: auto
   auto_batch_max: 32
   auto_batch_memory_fraction: 0.8

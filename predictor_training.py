@@ -24,7 +24,9 @@ from eval.artifacts import build_predictor_artifact, load_artifact
 from eval.predictor_data import (
     RawPredictorDataset, find_raw_trajectories, iter_raw_pairs, read_metadata, split_by_prompt,
 )
-from eval.predictor_parallel import Process, Progress, RankSampler, loader_workers, process_count, resolve_batch_size
+from eval.predictor_parallel import (
+    Process, Progress, RankSampler, RolloutGradients, loader_workers, process_count, resolve_batch_size,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -98,20 +100,79 @@ def mean_metrics(totals):
     return {key: value / count for key, value in totals.items() if key != "samples"}
 
 
+def closed_loop_epoch(cfg, generation, runtime, paths, model, criterion, process, optimizer=None, epoch=1):
+    from eval.predictor_rollout import empty_rollout
+    from eval.predictor_validation import run_trajectory
+
+    training = optimizer is not None
+    window = int(cfg.train.rollout_steps)
+    if not 1 <= window <= 4:
+        raise ValueError("train.rollout_steps must be between 1 and 4")
+    model.train(training)
+    selected = list(paths)
+    if training:
+        random.Random(int(cfg.seed) + epoch).shuffle(selected)
+    local_paths = selected[process.rank::process.world_size]
+    rounds = ((len(selected) + process.world_size - 1) // process.world_size
+              if training else len(local_paths))
+    gradients = RolloutGradients(model, optimizer, process, float(cfg.train.grad_clip)) if training else None
+    totals = dict(loss=0.0, mae=0.0, reuse_mae=0.0, quadratic_mae=0.0, samples=0)
+    drift_totals = dict(latent_mae_mean=0.0, latent_mae_max=0.0, latent_mae_final=0.0,
+                        latent_rmse_final=0.0, samples=0)
+    phase = f"Epoch {epoch} rollout {'train' if training else 'validation'}"
+    with Progress(f"{phase}: preparing trajectories", process.primary) as progress:
+        for index in range(rounds):
+            if index >= len(local_paths):
+                progress.update(f"{phase}: joining updates for the remaining trajectories")
+                empty_rollout(int(generation.sample_steps), int(cfg.cache.warmup_steps), window, gradients)
+                continue
+            path = local_paths[index]
+            label = f"{phase} trajectory {index + 1}/{rounds} ({path.name})"
+            progress.update(f"{label}: loading latent and text conditions")
+            progress.log(progress.phase)
+
+            def on_progress(step, total):
+                progress.update(f"{label}: node {step + 1}/{total}" if step < total else f"{label}: complete")
+                if step == 0 or step == total or (step + 1) % int(cfg.train.log_every) == 0:
+                    progress.log(progress.phase)
+
+            values, _, _, drift = run_trajectory(
+                cfg, generation, runtime, path, model, criterion,
+                gradients=gradients, measure_drift=not training, on_progress=on_progress,
+            )
+            for key in totals:
+                totals[key] += values[key]
+            if drift is not None:
+                for key, value in drift.metrics().items():
+                    drift_totals[key] += value
+                drift_totals["samples"] += 1
+            progress.log("%s | predicted nodes %d", label, values["samples"] // 2)
+        progress.update(f"{phase}: aggregating metrics across ranks")
+        totals = process.totals(totals)
+        metrics = (mean_metrics(totals) if training or totals["samples"]
+                   else {key: None for key in totals if key != "samples"})
+        if not training:
+            drift_totals = process.totals(drift_totals)
+            metrics.update(mean_metrics(drift_totals))
+        else:
+            metrics["optimizer_steps"] = gradients.optimizer_steps
+    return totals, metrics
+
+
 def fit_predictor(cfg, output_dir: Path):
-    """Launch one process per visible GPU for offline pretraining."""
+    """Launch one training process per visible GPU for either training stage."""
     output_dir.mkdir(parents=True, exist_ok=True)
     external_world = int(os.environ.get("WORLD_SIZE", "1"))
     if external_world > 1:
-        if str(cfg.train.stage) != "offline":
-            raise ValueError("multi-process training currently supports train.stage=offline")
+        if str(cfg.train.stage) not in {"offline", "rollout"}:
+            raise ValueError("multi-process training supports offline and rollout stages")
         if int(os.environ.get("LOCAL_WORLD_SIZE", external_world)) != external_world:
             raise ValueError("predictor launcher currently supports a single node")
         return _predictor_worker(int(os.environ["RANK"]), external_world, cfg, str(output_dir), "env://")
     count = process_count(cfg)
     if count == 1:
         return _fit_predictor(cfg, output_dir, Process(0, 1, torch.device(str(cfg.device))))
-    LOGGER.info("Launching offline DDP on %d devices", count)
+    LOGGER.info("Launching %s training on %d devices", cfg.train.stage, count)
     with tempfile.TemporaryDirectory(prefix="wan-predictor-ddp-") as rendezvous:
         mp.spawn(
             _predictor_worker,
@@ -231,6 +292,16 @@ def _fit_predictor(cfg, output_dir: Path, process):
             "generation": OmegaConf.to_container(generation, resolve=True),
             "paths": {"checkpoint_dir": str(cfg.paths.checkpoint_dir)},
         })
+        if stage == "rollout":
+            process.broadcast_model(model)
+            run_settings.update(
+                trajectory_batch_size_per_device=1, global_trajectory_batch_size=process.world_size,
+                gradient_sync_steps=int(cfg.train.rollout_steps), train_padding_samples=0,
+            )
+            if process.primary:
+                LOGGER.info("Closed-loop training | 1 trajectory per GPU / up to %d global | "
+                            "synchronize every %d solver nodes | no duplicated tail trajectories",
+                            process.world_size, int(cfg.train.rollout_steps))
         runtime = WanWorkerRuntime(runtime_cfg, Path(str(cfg.project_root)).resolve(), device.index or 0)
         if stage == "validate":
             from eval.predictor_validation import validate_predictor
@@ -238,33 +309,8 @@ def _fit_predictor(cfg, output_dir: Path, process):
             validate_predictor(cfg, generation, runtime, val_paths, model, criterion, output_dir)
             LOGGER.info("Full trajectory validation: %s", output_dir / "validation.json")
             return
-        runtime.ensure_loaded()
-
-    def rollout_epoch(selected, training):
-        from eval.predictor_validation import run_trajectory
-
-        model.train(training)
-        totals = dict(loss=0.0, mae=0.0, reuse_mae=0.0, quadratic_mae=0.0, samples=0)
-        drift_metrics = []
-        for path in selected:
-            values, _, _, drift = run_trajectory(
-                cfg, generation, runtime, path, model, criterion,
-                optimizer=optimizer if training else None, measure_drift=not training,
-            )
-            if drift is not None:
-                drift_metrics.append(drift.metrics())
-            for key in totals:
-                totals[key] += values[key]
-        if training or totals["samples"]:
-            metrics = mean_metrics(totals)
-        else:
-            metrics = {key: None for key in totals if key != "samples"}
-        if drift_metrics:
-            metrics.update({
-                key: sum(row[key] for row in drift_metrics) / len(drift_metrics)
-                for key in drift_metrics[0]
-            })
-        return totals, metrics
+        with Progress("Loading frozen Wan teacher on each training GPU", process.primary):
+            runtime.ensure_loaded()
 
     selection_metric = "loss" if stage == "offline" else "latent_mae_mean"
     best_score, best_epoch, stale = float("inf"), 0, 0
@@ -287,8 +333,12 @@ def _fit_predictor(cfg, output_dir: Path, process):
                     train_totals, val_totals = process.totals(train_totals), process.totals(val_totals)
                 train_metrics, val_metrics = mean_metrics(train_totals), mean_metrics(val_totals)
             else:
-                train_totals, train_metrics = rollout_epoch(train_paths, True)
-                val_totals, val_metrics = rollout_epoch(val_paths, False)
+                train_totals, train_metrics = closed_loop_epoch(
+                    cfg, generation, runtime, train_paths, model, criterion, process, optimizer, epoch,
+                )
+                val_totals, val_metrics = closed_loop_epoch(
+                    cfg, generation, runtime, val_paths, model, criterion, process, epoch=epoch,
+                )
             row = {
                 "epoch": epoch,
                 **{f"train_{k}": v for k, v in train_metrics.items()},

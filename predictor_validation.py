@@ -71,7 +71,8 @@ class TrajectoryDrift:
         }
 
 
-def run_trajectory(cfg, generation, runtime, path, model, criterion, optimizer=None, measure_drift=False):
+def run_trajectory(cfg, generation, runtime, path, model, criterion, optimizer=None, measure_drift=False,
+                   gradients=None, on_progress=None):
     device = next(model.parameters()).device
     initial = next(iter_raw_pairs(path))[0]["model_input"][0].to(device)
     scheduler = make_wan_scheduler(generation, device, runtime.pipeline.num_train_timesteps)
@@ -88,12 +89,19 @@ def run_trajectory(cfg, generation, runtime, path, model, criterion, optimizer=N
     if measure_drift:
         reference_solver = make_wan_scheduler(generation, device, runtime.pipeline.num_train_timesteps)
         drift = TrajectoryDrift(path, reference_solver, float(generation.sample_guide_scale))
+
+    def observe(step, x):
+        if on_progress is not None:
+            on_progress(step, len(scheduler.timesteps))
+        if drift is not None:
+            drift(step, x)
+
     values, cache, final = rollout(
         model, criterion, teacher, scheduler, initial,
         cache_threshold=float(cfg.cache.threshold), warmup_steps=int(cfg.cache.warmup_steps),
         final_full_steps=int(cfg.cache.final_full_steps), guide_scale=float(generation.sample_guide_scale),
         window_steps=int(cfg.train.rollout_steps), optimizer=optimizer,
-        grad_clip=float(cfg.train.grad_clip), on_state=drift,
+        grad_clip=float(cfg.train.grad_clip), on_state=observe, gradients=gradients,
     )
     return values, cache, final, drift
 

@@ -106,11 +106,11 @@ python -m eval.train --config-name=train_predictor \
 sbatch --gpus-per-node=4 --cpus-per-task=16 eval/slurm/run_train.sbatch
 ~~~
 
-多卡和自动 batch 当前用于 offline 阶段；rollout、validate 仍按单卡轨迹执行，这两阶段提交 Slurm 时使用 --gpus-per-node=1。
+offline 和 rollout 均默认使用所有可见 GPU。自动 batch 用于 offline；rollout 每卡独立推进一条完整轨迹，全局同时处理最多 GPU 数条轨迹。独立视频质量验证 validate 仍使用单卡。
 
 输出到 eval/artifacts/polynomial，包含 model.pth、history.csv 和 summary.json；保存 prompt 划分，并记录预测器、残差复用与标准二次外推的节点 MAE，作为预训练诊断。
 
-短段闭环微调从 raw 初始 latent 开始，重新构建文本条件，使用冻结 Wan 和真实 scheduler 推进。跳过节点的教师输出只作标签。每段最多 4 步，仅截断梯度，不增加完整刷新。验证跑完整轨迹，记录逐步及最终 latent 漂移，按全轨迹平均漂移选择权重。当前闭环流程支持 CUDA 上的 T2V：
+短段闭环微调从 raw 初始 latent 开始，重新构建文本条件，每卡使用自己的冻结 Wan 和 scheduler 推进。跳过节点的教师输出只作标签。各卡保留独立的刷新判断；本地遇到刷新提前反传并截断梯度，每隔最多 4 个去噪节点在公共边界汇总梯度，按实际预测节点数平均后统一更新参数。没有预测或没有尾部轨迹的卡贡献零梯度；缓存与 solver 数值状态继续保留，不增加刷新或重复轨迹。验证轨迹也按卡分摊，记录完整轨迹漂移并据此选取权重。当前支持 CUDA 上的 T2V：
 
 ~~~bash
 python -m eval.train --config-name=train_predictor \
@@ -119,6 +119,14 @@ python -m eval.train --config-name=train_predictor \
   init_artifact=eval/artifacts/polynomial/model.pth \
   output_dir=eval/artifacts/polynomial_rollout \
   paths.checkpoint_dir=/path/to/Wan2.2-TI2V-5B
+~~~
+
+同一配置可通过 Slurm 多卡运行：
+
+~~~bash
+sbatch --gpus-per-node=4 --cpus-per-task=16 eval/slurm/run_train.sbatch \
+  train.stage=rollout init_artifact=eval/artifacts/polynomial/model.pth \
+  output_dir=eval/artifacts/polynomial_rollout
 ~~~
 
 完整验证沿用训练时的 data、seed 和 val_ratio，在保留的 prompt 上生成 Origin/预测器配对视频，计算 PSNR、SSIM、LPIPS、FVD；validation.json 保存每条轨迹的漂移曲线与最终误差。两个质量模型需使用本地权重：

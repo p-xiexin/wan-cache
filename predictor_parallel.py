@@ -43,6 +43,56 @@ class Process:
         result["samples"] = int(result["samples"])
         return result
 
+    def broadcast_model(self, model):
+        if self.world_size > 1:
+            for value in model.state_dict().values():
+                dist.broadcast(value, src=0)
+
+
+class RolloutGradients:
+    """Synchronize at common solver nodes, independent of local cache decisions.
+
+    Each finished local segment contributes its loss sum and prediction count.
+    Empty ranks contribute zeros. One reduction averages over all actual
+    prediction nodes before clipping and applying the same update on every GPU.
+    """
+
+    def __init__(self, model, optimizer, process, grad_clip=1.0):
+        self.parameters = [p for p in model.parameters() if p.requires_grad]
+        self.optimizer, self.process, self.grad_clip = optimizer, process, grad_clip
+        self.count = 0
+        self.optimizer_steps = 0
+        self.optimizer.zero_grad(set_to_none=True)
+
+    def backward(self, losses):
+        torch.stack(losses).sum().backward()
+        self.count += len(losses)
+
+    def step(self):
+        packed = torch.cat([
+            p.grad.detach().reshape(-1) if p.grad is not None else torch.zeros_like(p).reshape(-1)
+            for p in self.parameters
+        ] + [self.parameters[0].new_tensor([self.count])])
+        if self.process.world_size > 1:
+            dist.all_reduce(packed)
+        count = int(packed[-1].item())
+        if count:
+            if not torch.isfinite(packed).all():
+                raise FloatingPointError("non-finite distributed rollout gradients")
+            packed[:-1].div_(count)
+            offset = 0
+            for parameter in self.parameters:
+                end = offset + parameter.numel()
+                parameter.grad = packed[offset:end].view_as(parameter)
+                offset = end
+            if self.grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(self.parameters, self.grad_clip)
+            self.optimizer.step()
+            self.optimizer_steps += 1
+        self.optimizer.zero_grad(set_to_none=True)
+        self.count = 0
+        return count
+
 
 class RankSampler(Sampler):
     """Contiguous sample ranges preserve raw-file locality.
@@ -102,9 +152,9 @@ class Progress:
 
 
 def process_count(cfg):
-    if str(cfg.train.stage) != "offline":
+    if str(cfg.train.stage) == "validate":
         if str(cfg.parallel.num_processes) not in {"auto", "1"}:
-            raise ValueError("multi-GPU DDP currently supports train.stage=offline")
+            raise ValueError("standalone video validation currently requires parallel.num_processes=1")
         return 1
     requested = cfg.parallel.num_processes
     device = torch.device(str(cfg.device))

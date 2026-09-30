@@ -19,18 +19,35 @@ def detach_solver_history(scheduler):
         scheduler.last_sample = scheduler.last_sample.detach()
 
 
+def synchronization_node(step, sample_steps, warmup_steps, window_steps):
+    return step == sample_steps - 1 or (
+        step >= warmup_steps and (step + 1 - warmup_steps) % window_steps == 0
+    )
+
+
+def empty_rollout(sample_steps, warmup_steps, window_steps, gradients):
+    """A rank without a final trajectory still joins the same reductions."""
+    for step in range(sample_steps):
+        if synchronization_node(step, sample_steps, warmup_steps, window_steps):
+            gradients.step()
+
+
 def rollout(
     model, criterion, teacher, scheduler, initial_latent, *,
     cache_threshold, warmup_steps, final_full_steps, guide_scale,
-    window_steps=4, optimizer=None, grad_clip=1.0, on_state=None,
+    window_steps=4, optimizer=None, grad_clip=1.0, on_state=None, gradients=None,
 ):
     """teacher(x, timestep, conditional) evaluates a frozen DiT on current x.
 
     Teacher probes on skipped nodes are labels only. All solver updates use
     the selected prediction, and full refreshes end a gradient segment.
+    A gradient reducer accumulates these local segments and updates parameters
+    only at shared solver nodes; truncation never forces a cache refresh.
     """
     if not 1 <= window_steps <= 4:
         raise ValueError("rollout window_steps must be between 1 and 4")
+    if gradients is not None and optimizer is not None:
+        raise ValueError("use either synchronized gradients or a local optimizer")
     method = PolynomialMethod(model=model, cache_threshold=cache_threshold)
     method.reset(len(scheduler.timesteps), warmup_steps, final_full_steps)
     method.set_schedule(scheduler.sigmas, scheduler.timesteps)
@@ -40,7 +57,9 @@ def rollout(
 
     def finish_segment():
         nonlocal x
-        if pending and optimizer is not None:
+        if pending and gradients is not None:
+            gradients.backward(pending)
+        elif pending and optimizer is not None:
             loss = torch.stack(pending).mean()
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -56,7 +75,7 @@ def rollout(
                 setattr(method, name, [v.detach() for v in values])
         method.last_coefficients.clear()
 
-    with torch.set_grad_enabled(optimizer is not None):
+    with torch.set_grad_enabled(optimizer is not None or gradients is not None):
         for step, timestep in enumerate(scheduler.timesteps):
             if on_state is not None:
                 on_state(step, x.detach())
@@ -95,7 +114,12 @@ def rollout(
             x = scheduler.step(
                 guided[None], timestep, x[None], return_dict=False,
             )[0][0]
-            if len(pending) == window_steps:
+            if gradients is not None and synchronization_node(
+                step, len(scheduler.timesteps), warmup_steps, window_steps,
+            ):
+                finish_segment()
+                gradients.step()
+            elif len(pending) == window_steps:
                 finish_segment()
         finish_segment()
         if on_state is not None:
