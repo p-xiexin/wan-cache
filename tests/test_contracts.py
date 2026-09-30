@@ -534,7 +534,7 @@ class EvalContractTests(unittest.TestCase):
             "temporal_0.07",
             "magcache_output_0.06",
             "d2cache_output_0.05",
-            "piecewise",
+            "piecewise_0.05",
         ]
         self.assertEqual(
             [task.output_group for task in tasks],
@@ -622,7 +622,7 @@ class EvalContractTests(unittest.TestCase):
             "temporal_0.07",
             "magcache_output_0.06",
             "d2cache_output_0.05",
-            "piecewise",
+            "piecewise_0.05",
         )
         self.assertEqual(
             [pair.target_video for pair in pairs],

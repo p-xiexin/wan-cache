@@ -215,7 +215,7 @@ Piecewise       1 个配置 × 3 条 prompt = 3
 
 `magcache_output` 使用 MagCache 官方 Wan2.2 TI2V-5B T2V magnitude ratio、0.06 阈值和最大连续缓存 2 个 pair。`d2cache_output` 使用与 EasyCache 相同的 output-level 调度，并用前两次完整计算得到的 residual delta 修正缓存输出。两者都是完整 DiT output residual 上的快速研究适配。MagCache 和 D2Cache 原实现都作用在 transformer block feature 上，当前结果不能直接与论文数字等同。
 
-`piecewise` 使用已训练的分段多项式先验，通过真实输出节点预测后续 DiT 输出。直接修改该方法的 `use_online_fit` 和 `use_mirror_node` 即可对比，默认 `true/false`；`false/false` 关闭在线校正，`true/true` 加入镜像节点。系数路径为 `paths.piecewise_artifact`，方法说明见 [PIECEWISE_DEPLOYMENT.txt](PIECEWISE_DEPLOYMENT.txt)。
+`piecewise` 使用已训练的分段多项式先验，通过真实输出节点预测后续 DiT 输出。`cache_thresholds` 控制累计预测变化的预算，达到阈值时真实计算一次并清零，无固定跳步或连续真实计算块。直接修改该方法的 `use_online_fit` 和 `use_mirror_node` 即可对比，默认 `true/false`；`false/false` 只保留先验形状与幅值对齐，`true/true` 加入镜像节点。系数路径为 `paths.piecewise_artifact`，方法说明见 [PIECEWISE_DEPLOYMENT.txt](PIECEWISE_DEPLOYMENT.txt)。
 
 Wan 必须安装在当前 conda 环境中。`paths.checkpoint_dir` 指向 Wan 权重目录，`paths.model_artifact` 和 `paths.temporal_artifact` 指向两套学习方法的权重。
 

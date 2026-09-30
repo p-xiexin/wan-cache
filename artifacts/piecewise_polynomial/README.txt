@@ -22,6 +22,10 @@ mirror_node_mode="anchor" 只增加同位置约束，虚拟节点不读取镜像
 不会在训练范围之外自动外推；换步数、模型或 scheduler 应重新校准。
 q_s 的真实观测需要完整 v_(s-1) 和 v_s。跨多个步骤的差值不能当作 q_s。
 
+服务器稀疏节点可通过 OnlinePolynomial.observe_interval(a,b,relative_change) 做区间近似校正。
+它用真实端点距离与先验区间变化总量的比值校准幅值，记录在先验加权的区间中心。
+这不是实测的单步 q；局部方向折返或输出尺度变化会造成偏差，原离线指标不覆盖此近似。
+
 这份包实现系数先验和在线标量校正，不包含刷新调度或完整张量重建。
 服务器中的张量预测仍需使用真实 DiT 节点提供方向和幅值，并单独验证。
 重新拟合：python analyze/train_piecewise_polynomial.py --data /path/to/lazy_dataset_500 --output /path/to/output

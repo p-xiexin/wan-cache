@@ -75,11 +75,11 @@ targets:
       - ${experiment_root}/d2cache_output_0.05/1.mp4
       - ${experiment_root}/d2cache_output_0.05/2.mp4
   - method: piecewise
-    cache_threshold: null
+    cache_threshold: 0.05
     videos:
-      - ${experiment_root}/piecewise/0.mp4
-      - ${experiment_root}/piecewise/1.mp4
-      - ${experiment_root}/piecewise/2.mp4
+      - ${experiment_root}/piecewise_0.05/0.mp4
+      - ${experiment_root}/piecewise_0.05/1.mp4
+      - ${experiment_root}/piecewise_0.05/2.mp4
 device: cuda:0
 batch_size: 4
 # Download: https://download.pytorch.org/models/alexnet-owt-7be5be79.pth

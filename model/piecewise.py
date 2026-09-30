@@ -45,18 +45,19 @@ def lagrange_weights(nodes, target):
 
 
 class PiecewisePolynomialMethod(CacheMethod):
-    """Direct DiT-output prediction; no neural predictor or adaptive threshold.
+    """Direct DiT-output prediction with a cumulative-change threshold.
 
-    All ablations use the same fixed real-node schedule. Two consecutive real
-    CFG pairs per refresh block provide valid adjacent conditional q samples.
+    Each real CFG pair resets the accumulated predicted relative change.
+    Nonadjacent real outputs supply an explicitly approximate interval
+    calibration; adjacent pairs supply exact single-step q observations.
     Both CFG branches share that fitted scalar coordinate and keep separate
     output tensors. Predicted outputs never update the real-node histories.
     """
     name = "piecewise_polynomial"
 
-    def __init__(self, artifact_path: str, use_online_fit=True, use_mirror_node=False,
-                 mirror_node_mode="observed", tensor_degree=1, skip_steps=2,
-                 full_block_steps=2):
+    def __init__(self, artifact_path: str, cache_threshold: float,
+                 use_online_fit=True, use_mirror_node=False,
+                 mirror_node_mode="observed", tensor_degree=1):
         self.prior = PiecewisePolynomialPrior.load(artifact_path)
         self.artifact_sha256 = hashlib.sha256(Path(artifact_path).read_bytes()).hexdigest()
         self.options = dict(use_online_fit=use_online_fit, use_mirror_node=use_mirror_node,
@@ -64,13 +65,10 @@ class PiecewisePolynomialMethod(CacheMethod):
         OnlinePolynomial(self.prior, **self.options)  # validate switch combination
         if type(tensor_degree) is not int or tensor_degree not in (1, 2):
             raise ValueError("tensor_degree must be 1 or 2")
-        if type(skip_steps) is not int or skip_steps < 1:
-            raise ValueError("skip_steps must be a positive integer")
-        if type(full_block_steps) is not int or full_block_steps < 2:
-            raise ValueError("full_block_steps must be >=2 for adjacent real q observations")
+        if not math.isfinite(cache_threshold) or cache_threshold < 0:
+            raise ValueError("cache_threshold must be finite and nonnegative")
+        self.cache_threshold = float(cache_threshold)
         self.tensor_degree = tensor_degree
-        self.skip_steps = skip_steps
-        self.full_block_steps = full_block_steps
         artifact = self.prior.artifact
         self.trained_generation = artifact["generation"]
         grid = np.asarray(artifact["step_grid"])
@@ -104,7 +102,10 @@ class PiecewisePolynomialMethod(CacheMethod):
         self.trajectory = OnlinePolynomial(self.prior, **self.options)
         self.nodes = {True:[], False:[]}
         self.q_observations = []
+        self.interval_observations = []
         self.predictions = []
+        self.accumulated_change = 0.0
+        self.decisions = []
         self._weight_step = None
         self._weights = None
 
@@ -113,15 +114,20 @@ class PiecewisePolynomialMethod(CacheMethod):
         return (super().history_ready
                 and all(len(nodes) >= self.tensor_degree+1 for nodes in self.nodes.values()))
 
-    def is_full_step(self, step):
-        if step < self.warmup_steps or step >= self.sample_steps-self.final_full_steps:
-            return True
-        phase = (step-self.warmup_steps) % (self.skip_steps+self.full_block_steps)
-        return phase >= self.skip_steps
-
     def decide_conditional(self, raw_input, timestep):
         del raw_input, timestep
-        return not self.is_full_step(self.pair_index)
+        if self.protected or not self.history_ready:
+            self.accumulated_change = 0.0
+            self.decisions.append({"step":self.pair_index,"skip":False,
+                "reason":"protected" if self.protected else "insufficient_nodes"})
+            return False
+        predicted_change = float(self.trajectory.predict(self.pair_index))
+        self.accumulated_change += predicted_change
+        skip = self.accumulated_change < self.cache_threshold
+        self.decisions.append({"step":self.pair_index,"skip":skip,
+            "predicted_change":predicted_change,"accumulated_change":self.accumulated_change,
+            "reason":"below_threshold" if skip else "threshold_reached"})
+        return skip
 
     def try_skip(self, raw_input, timestep):
         step = self.pair_index
@@ -138,8 +144,9 @@ class PiecewisePolynomialMethod(CacheMethod):
     def update(self, raw_input, output):
         branch = self.forward_index % 2 == 0
         step = self.pair_index
-        if not self.is_full_step(step):
-            raise RuntimeError("only scheduled real DiT outputs may enter node history")
+        if (self.skip_current_pair or not self.calculated_pairs
+                or self.calculated_pairs[-1] != step):
+            raise RuntimeError("only selected real DiT outputs may enter node history")
         nodes = self.nodes[branch]
         if nodes and step <= nodes[-1].step:
             raise ValueError("real node steps must strictly advance")
@@ -151,10 +158,16 @@ class PiecewisePolynomialMethod(CacheMethod):
         if nodes and (len(nodes[-1].outputs) != len(real) or any(
                 v.shape != old.shape for v,old in zip(real,nodes[-1].outputs))):
             raise ValueError("real output layout changed within a trajectory")
-        if branch and nodes and nodes[-1].step == step-1 and step in self.expected_timesteps:
-            q = _mean_abs_difference(real,nodes[-1].outputs)/(_mean_abs(nodes[-1].outputs)+1e-8)
-            self.trajectory.observe(step,q)
-            self.q_observations.append({"step":step,"q":q})
+        if branch:
+            self.accumulated_change = 0.0
+            if nodes and step in self.expected_timesteps:
+                change = _mean_abs_difference(real,nodes[-1].outputs)/(_mean_abs(nodes[-1].outputs)+1e-8)
+                if nodes[-1].step == step-1:
+                    self.trajectory.observe(step,change)
+                    self.q_observations.append({"step":step,"q":change})
+                else:
+                    self.interval_observations.append(self.trajectory.observe_interval(
+                        nodes[-1].step,step,change))
         nodes.append(OutputNode(step,real))
         del nodes[:max(0,len(nodes)-self.tensor_degree-1)]
         self._weight_step = None
@@ -180,7 +193,7 @@ class PiecewisePolynomialMethod(CacheMethod):
         self.predictions.append({"step":step,"real_node_steps":node_steps.tolist(),
             "tensor_weights":self._weights.tolist(),
             "log_predicted_q":float(log_q[-1]),
-            "latest_scalar_node":self.trajectory.observed_steps[-1] if self.trajectory.observed_steps else None})
+            "latest_calibration_end_step":self.trajectory.latest_observation_end})
         return self._weights
 
     def predict_cached_output(self, raw_input, timestep, is_conditional):
@@ -203,9 +216,9 @@ class PiecewisePolynomialMethod(CacheMethod):
         return {**super().summary(), **self.options,
             "artifact_sha256":self.artifact_sha256,"tensor_degree":self.tensor_degree,
             "reconstruction":"polynomial in cumulative predicted relative-change coordinate",
-            "schedule":{"kind":"fixed_blocks","skip_steps":self.skip_steps,
-                        "full_block_steps":self.full_block_steps},
-            "planned_full_pairs":[s for s in range(self.sample_steps) if self.is_full_step(s)],
-            "q_source":"adjacent real conditional outputs; coordinate shared by CFG branches",
+            "schedule":{"kind":"cumulative_predicted_change","cache_threshold":self.cache_threshold},
+            "decisions":self.decisions,
+            "q_source":"adjacent real conditional outputs; sparse intervals use a chord-change proxy",
             "mirror_axis_step":self.prior.center,"online_fit_parameters":self.prior.artifact["online_fit"],
-            "real_scalar_nodes":self.q_observations,"predictions":self.predictions}
+            "real_scalar_nodes":self.q_observations,
+            "interval_calibration_nodes":self.interval_observations,"predictions":self.predictions}

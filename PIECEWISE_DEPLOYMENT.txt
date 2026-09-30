@@ -5,16 +5,15 @@
   直接编辑 piecewise 条目，无需专用配置或额外启动脚本：
 
     - name: piecewise
+      cache_thresholds: [0.05]
       method:
         _target_: eval.model.piecewise.PiecewisePolynomialMethod
         artifact_path: ${paths.piecewise_artifact}
         use_online_fit: true
         use_mirror_node: false
         tensor_degree: 1
-        skip_steps: 2
-        full_block_steps: 2
 
-  false/false：冻结先验；true/false：在线校正；true/true：在线校正加镜像节点。
+  false/false：先验形状加幅值对齐；true/false：在线校正；true/true：在线校正加镜像节点。
   use_online_fit=false 时不能开启 use_mirror_node。
   自行保留需要的 methods；对比多组时复制条目并使用不同 name 区分输出。
 
@@ -32,15 +31,24 @@
 
 推理规则
   prior.json 保存相邻 conditional DiT 输出相对变化 q 的分段三次 log(q) 曲线。
-  在线用真实 q 校正曲线；镜像开关加入偏离先验的镜像软节点。
+  相邻真实节点用实测 q 校正曲线；镜像开关加入偏离先验的镜像软节点。
   张量预测使用累计变化坐标 rho(t)=sum(q_hat(s))，在最近 d+1 个真实输出
   节点上拟合 d 阶多项式。默认 tensor_degree=1，也支持 2。
   两个 CFG 分支共享曲线坐标，各自保存真实输出；预测值不作为真实节点。
-  默认前 7 步和末 1 步真实计算，中间重复“预测 2 步、真实 2 步”。
-  共 28 个真实 CFG pair、22 个预测 pair；full_block_steps 至少为 2，
-  才能测得相邻真实输出的 q。该方法用固定节点调度，不配置 cache_threshold。
+  默认前 7 步和末 1 步真实计算。其他步骤逐步累加 q_hat(s)，达到 cache_threshold
+  时本步真实计算，并将累计量清零；否则使用预测输出。没有固定跳步数或真实块长度。
+  阈值是预测变化量预算，不是张量预测误差或视频质量误差的上限。
+  开关会影响曲线及节点选择；对比时记录实际 DiT 调用数，不能假定各组预算相同。
+
+稀疏节点校正
+  跨步真实节点 a、b 提供 D=mean(abs(v_b-v_a))/(mean(abs(v_a))+eps)。
+  使用 log(D/sum(q_prior(a+1..b))) 作为区间幅值校正，放在先验加权的区间中心。
+  这是区间近似，要求局部输出方向和归一化尺度变化较小；轨迹折返时可能低估变化。
+  它不等于某个跳过步骤的真实 q，也不会把预测输出写进观测历史。
+  日志分别保存 real_scalar_nodes 与 interval_calibration_nodes，后者标记为代理观测。
 
 适用范围
   当前系数对应 TI2V-5B、1280*704、121 帧、50 步、UniPC、shift=5、CFG=5 的 T2V。
   运行时校验生成参数和 timestep，日志保存开关、系数哈希、真实节点及预测权重。
+  系数与离线校准参数保持原样；已有离线指标对应相邻 q 观测，不验证稀疏区间近似。
   本地已验证数值计算及模拟 Wan forward 接口；真实 GPU 视频质量仍需服务器实验。

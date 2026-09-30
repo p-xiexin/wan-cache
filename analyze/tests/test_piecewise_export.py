@@ -63,6 +63,34 @@ class PiecewiseExportTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             OnlinePolynomial(example_prior(),use_online_fit=False,use_mirror_node=True)
 
+    def test_sparse_interval_calibrates_prior_mass_without_claiming_a_single_step_q(self):
+        prior=example_prior()
+        runtime=OnlinePolynomial(prior,use_online_fit=False)
+        runtime.observe(10,float(prior.value(10)))
+        steps=np.arange(11,17)
+        mass=float(prior.value(steps).sum())
+        node=runtime.observe_interval(10,16,2*mass)
+        self.assertEqual(node['kind'],'interval_change_proxy')
+        self.assertEqual(node['end_step'],16)
+        self.assertAlmostEqual(node['fit_step'],float(steps @ prior.value(steps)/mass))
+        self.assertAlmostEqual(node['log_correction'],np.log(2))
+        np.testing.assert_allclose(runtime.predict([16,18,20]),2*prior.value([16,18,20]),rtol=1e-12)
+        self.assertEqual(len(runtime.observed_steps),2)  # No invented skipped-step observations.
+        with self.assertRaises(ValueError): runtime.predict(15)
+        with self.assertRaises(ValueError): runtime.observe(15,.02)
+        with self.assertRaises(ValueError): runtime.observe_interval(15,18,.05)
+        runtime.observe(17,.02)  # Exact adjacent q remains supported after an interval.
+        self.assertAlmostEqual(float(runtime.predict(17)),.02)
+
+    def test_invalid_sparse_intervals_leave_calibration_unchanged(self):
+        runtime=OnlinePolynomial(example_prior(),use_online_fit=True,use_mirror_node=True)
+        runtime.observe(5,.02)
+        for start,end,change in ((4,8,.03),(5,6,.03),(5,49,.03),(5.5,8,.03),
+                                  (5,8,-1),(5,8,float('nan'))):
+            with self.assertRaises(ValueError): runtime.observe_interval(start,end,change)
+            self.assertEqual(runtime.observed_steps,[5.])
+            self.assertEqual(runtime.latest_observation_end,5.)
+
     def test_mirror_is_causal_and_geometry_control_ignores_old_values(self):
         # Source step 10 is a future virtual node after reflection, but is
         # outside the local five-node fit. Geometry control must not read it.

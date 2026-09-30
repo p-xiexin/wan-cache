@@ -1,25 +1,29 @@
 {
-  "tests_passed": 66,
-  "deployment_tests": 8,
+  "tests_passed": 52,
+  "deployment_tests": 9,
   "pipeline_contract_tests": 36,
-  "scalar_analysis_tests": 22,
-  "pipeline_dry_run": "39 tasks prepared via default sweep",
+  "scalar_export_tests": 7,
+  "pipeline_dry_run": "39 tasks prepared via default sweep; piecewise_0.05 output group",
   "real_wan_gpu_generation_tested": false,
   "local_environment": "CPU; CUDA and Wan unavailable",
+  "integration_entry": "python -m eval.pipeline (conf/sweep.yaml)",
+  "scheduling": "cumulative predicted relative change >= cache_threshold triggers a real CFG pair",
+  "sparse_node_calibration": "prior-weighted interval chord-change proxy; separate from exact adjacent q observations",
+  "limitations": [
+    "Offline dense-node metrics do not validate sparse interval calibration or video quality."
+  ],
   "source_sha256": {
     "model/base.py": "99b153d964c8e3c13f468e53ca8602736b1cb8e1031861fc6efc615dc103f586",
-    "model/piecewise.py": "c969521c4e5ea0073563048121b5f46e3209748ec388d68adfbe59d3d3ce4329",
+    "model/piecewise.py": "bffb273fc435a8511e49504cbbbbc0eb8720a95a1c2d90748e56c01fb49d550e",
     "model/__init__.py": "e18127d8c3af7db809f827b2c75759b9abc43c37fe259670a24928b71888d3ae",
-    "polynomial_prior.py": "7751cb5166e8ac07acc30f616f7127527dcc2f6cc4ac4824f4ae7145e57bf279",
+    "polynomial_prior.py": "9d6e61035c6e62a4b1fe27f79c34c317bd12e2cf28e8e7c018d54d9a655d2564",
     "pipeline.py": "2406db0ad53334284d1f715ec837b8bd4bca91e3b4cb5807f247c83a8c57761b",
-    "conf/sweep.yaml": "982146b4025386932ccb6229a50cc81f1570b867d6b33790c677effd40ed6cf1",
-    "conf/quality.yaml": "ab9426472605f11647ead16b1cc7a0f116b1c376aa1b461f7d2487d1ca0d4ba8",
-    "tests/test_contracts.py": "ba6eb621e52b357abe6b1e1d3db803a2f8af35ad9497ddbd036aaae5a8f72a50",
-    "tests/test_piecewise_deployment.py": "8a95e95336709fe3e06bdc1c3e6b1422d06db78001088a517db67b39064c7b1e",
+    "conf/sweep.yaml": "f146a1becff581a7ff14502827ec62f9d05833feaf1aa7bc9c7879bb37a42b92",
+    "conf/quality.yaml": "b50ceb3dc833ea0e19e4b002cd93d48044b519d41d97f6d023e3118e1797db56",
+    "tests/test_contracts.py": "26ff2cbe4f85db7f529f69a3171112c4c746b1bceb09d185660ef4162e6ad3b8",
+    "tests/test_piecewise_deployment.py": "448f9b63641a900c3bdcebfa0509e6988012d292a7effaf3b2237128bff3e2a1",
     "artifacts/piecewise_polynomial/prior.json": "53a385cefd19300ec523334f98715a982659694b6ef6821801b478d7bc88693a",
-    "PIECEWISE_DEPLOYMENT.txt": "5388368e974eac6205d55d22565fd6d0ca376ecb6544805a7d3a09ece36bc1a5"
+    "PIECEWISE_DEPLOYMENT.txt": "5ab6582ea0320f0a92ae8f7b784697339dc345e2535cd628f64c4ebb0c8acca9"
   },
-  "integration_entry": "python -m eval.pipeline (conf/sweep.yaml)",
-  "tests_rerun_after_sweep_integration": 44,
-  "scalar_analysis_tests_note": "22 previously passed; scalar fitting implementation unchanged"
+  "scalar_test_sha256": "71cf0c8fc331e5e2fa920c44c84d275c108d093885fae1d301a774d6321b79ba"
 }

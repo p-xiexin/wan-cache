@@ -162,7 +162,12 @@ class PiecewisePolynomialPrior:
 
 
 class OnlinePolynomial:
-    """Anchored prior, optional online ridge fit, optional soft mirror nodes."""
+    """Anchored prior, optional online ridge fit, optional soft mirror nodes.
+
+    observe() accepts exact adjacent-step q measurements. observe_interval()
+    uses a separately identified chord-change proxy for sparse real nodes;
+    its fit coordinate is the prior-weighted midpoint of that interval.
+    """
     def __init__(self, prior, *, use_online_fit=True, use_mirror_node=False,
                  mirror_node_mode="observed"):
         self.prior = prior
@@ -171,20 +176,57 @@ class OnlinePolynomial:
         correction_weights([prior.breaks[0]], [prior.breaks[0]], prior.center,
                            prior.online_config, domain_end=prior.breaks[-1], **self.options)
         self.observed_steps, self.observed_log_values = [], []
+        self.latest_observation_end = None
 
     def observe(self, step, q):
         self.prior.log_value(step)  # domain check before updating history
-        if self.observed_steps and step <= self.observed_steps[-1]:
+        if self.latest_observation_end is not None and step <= self.latest_observation_end:
             raise ValueError("observed nodes must strictly advance")
         if not math.isfinite(q) or q < 0:
             raise ValueError("observed change must be finite and nonnegative")
         self.observed_steps.append(float(step))
         self.observed_log_values.append(math.log(max(float(q), 1e-8)))
+        self.latest_observation_end = float(step)
+
+    def observe_interval(self, start_step, end_step, relative_change):
+        """Calibrate from two nonadjacent REAL outputs, not a measured q_s.
+
+        The endpoint distance / start-output norm approximates sum(q_s) only
+        when output directions and norms vary slowly across the interval.
+        A chord can underestimate variation when the trajectory turns back.
+        Match its log ratio to the prior's interval mass, placing this derived
+        calibration at the prior-weighted step (a first-order moment fit).
+        No individual skipped q or output is claimed to have been observed.
+        """
+        if (not math.isfinite(start_step) or not math.isfinite(end_step)
+                or not float(start_step).is_integer() or not float(end_step).is_integer()
+                or end_step-start_step <= 1):
+            raise ValueError("interval calibration requires nonadjacent integer steps")
+        if self.latest_observation_end is not None and start_step < self.latest_observation_end:
+            raise ValueError("real observation intervals must not overlap")
+        if not math.isfinite(relative_change) or relative_change < 0:
+            raise ValueError("interval change must be finite and nonnegative")
+        steps = np.arange(int(start_step)+1, int(end_step)+1, dtype=float)
+        log_prior = self.prior.log_value(steps)
+        largest = float(log_prior.max())
+        weights = np.exp(log_prior-largest)
+        log_mass = largest+math.log(float(weights.sum()))
+        fit_step = float(steps @ weights / weights.sum())
+        log_correction = math.log(max(float(relative_change), 1e-8))-log_mass
+        self.observed_steps.append(fit_step)
+        self.observed_log_values.append(float(self.prior.log_value(fit_step))+log_correction)
+        self.latest_observation_end = float(end_step)
+        return {"kind":"interval_change_proxy", "start_step":int(start_step),
+                "end_step":int(end_step), "fit_step":fit_step,
+                "relative_change":float(relative_change),
+                "log_prior_interval_sum":log_mass, "log_correction":log_correction}
 
     def predict_log(self, steps):
         base = self.prior.log_value(steps)
         if not self.observed_steps:
             return base  # offline curve before any real node arrives
+        if np.any(np.asarray(steps) < self.latest_observation_end):
+            raise ValueError("prediction must not precede the latest real observation")
         weights = correction_weights(self.observed_steps, steps, self.prior.center,
                                      self.prior.online_config, domain_end=self.prior.breaks[-1], **self.options)
         residual = np.array(self.observed_log_values)-self.prior.log_value(self.observed_steps)
